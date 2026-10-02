@@ -1,65 +1,92 @@
 # VrMC
 
-VR media controls.
+**VR media controls on your wrist.** A SteamVR overlay that shows what's playing and lets you control
+it without leaving VR, and optionally lets people in VRChat hear your music.
 
-A SteamVR overlay that puts music controls on your wrist: now playing, previous / play-pause / next,
-a volume slider for the music app only, and an optional **SHARE** switch that lets people in VRChat
-hear your music (mixed under your voice) at a level you choose.
+![The VrMC panel](preview.png)
 
-![panel](preview.png)
+## Features
 
-Made for YouTube Music in a browser, but it works with any app that shows up in the Windows media
-controls (the popup you get from the keyboard volume keys).
+- **Now playing**: title, artist and album art for whatever is in the Windows media controls
+  (YouTube Music in a browser, Spotify, Pear Desktop...).
+- **⏮ ⏯ ⏭** previous, play/pause, next.
+- **You hear**: a volume slider and mute for the music app only, not your headset or VRChat.
+- **SHARE + others hear**: mixes your music into your VRChat mic, with its own volume, independent of
+  yours. Off every time VrMC starts.
+- **Level bars** under both sliders.
+- **Touch or laser**: poke it with your other controller, or laser-click it while the dashboard is open.
+- **Grab to move**: hold grip or trigger on an empty spot and move it. The position is remembered.
+- **Any language**: Hebrew and Arabic (right to left), Japanese, Chinese, Korean, Cyrillic and emoji,
+  also mixed in one title.
+- **Starts with SteamVR**, and quits with it.
 
-## Requirements
+## Install
 
-- Windows 10 2004+ or Windows 11 (music sharing uses per-app audio capture)
-- SteamVR
-- Python 3.12+ and `pip install -r requirements.txt`
-- For SHARE: the **Steam Streaming Microphone** device (installed with Steam)
+Needs Windows 10 (2004+) or 11, SteamVR, and Python 3.12+.
 
-## Run
+```
+pip install -r requirements.txt
+```
 
-Start SteamVR, then double-click `run.bat` (or `pythonw wrist_media.py`).
-The first run registers it with SteamVR so it starts automatically with SteamVR after that
-(turn off in SteamVR Settings → Startup/Shutdown → Choose Startup Overlay Apps).
+Start SteamVR, then double-click `run.bat`. The first run registers VrMC to start with SteamVR from then
+on (turn it off in SteamVR Settings → Startup/Shutdown → Choose Startup Overlay Apps).
 
 ## Use
 
-The panel sits on your **left** wrist. Touch it with the tip of your right controller
-(or laser-click it while the SteamVR dashboard is open).
+The panel appears on your **left wrist**.
 
-| Control | What it does |
+| | |
 | --- | --- |
-| ⏮ ⏯ ⏭ | previous / play-pause / next |
-| 🔊 + **you hear** slider | mute / volume of the music app only (not your headset, not VRChat) |
-| **SHARE** + **others hear** slider | send your music into your VRChat mic; slider sets how loud it is for others |
+| **Press a button** | Touch it with your right controller's tip, or laser-click it (dashboard open) |
+| **Move the panel** | Touch an empty spot (title area, gaps), hold grip or trigger, move, let go |
+| **Volume** | Drag the *you hear* slider; 🔊 mutes the music app |
+| **Share your music** | Tap **SHARE**, set *others hear* (see below) |
 
-Both sliders use a perceptual curve: 50% sounds about half as loud. They're independent: changing
-what you hear doesn't change what others hear. The bars under each slider show the live level.
+Both sliders use a perceptual curve: 50% sounds about half as loud.
 
-### Letting people hear your music (SHARE)
+### Letting people in VRChat hear your music
 
-1. In VRChat → Settings → Audio, set **Microphone** to **Steam Streaming Microphone**
-   and turn **noise suppression off** (it treats music as noise).
-2. Tap **SHARE** on the panel. It is off every time the panel starts.
+1. In VRChat → Settings → Audio, set **Microphone** to **Steam Streaming Microphone** and turn
+   **noise suppression off** (it removes music as noise).
+2. Tap **SHARE** on the panel.
 
-Your voice is then routed through this program: if it isn't running, VRChat hears nothing
-(switch VRChat back to your normal mic). Sharing copies *everything* the music app plays,
-e.g. other browser tabs.
+VrMC mixes your real mic (your Windows default mic) and a copy of the music app's audio into that
+virtual mic. You keep hearing the music normally.
+
+- While VRChat uses that mic, your voice goes through VrMC: if VrMC isn't running, VRChat hears
+  nothing. Switch VRChat back to your normal mic in that case.
+- SHARE copies everything the music app plays, for example other tabs in the same browser.
 
 ## Settings
 
-Double-click `run_settings.bat` for a settings window: which wrist, panel size / position / tilt,
-touch sensitivity, which mic to mix into VRChat, and the starting "others hear" level. Changes are
-saved to `settings.json` and the running panel applies them within a second.
-Clicks, touches and audio events are logged to `%TEMP%\wrist_media.log`.
+The panel position is saved to `settings.json` when you let go of it. A few more values can be edited
+there by hand (restart VrMC afterwards):
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `hand` | `"left"` | Which wrist the panel is on (`"left"` / `"right"`) |
+| `width_m` | `0.13` | Panel width in metres |
+| `poke_tip_m` | `0.05` | How far in front of the controller its "fingertip" is |
+| `poke_press_m` | `0.015` | How close the fingertip must get to press |
+| `mic` | `""` | Mic to mix into VRChat; empty = Windows default |
+| `others_pct` | `50` | Starting *others hear* level |
+| `panel_pose` | | Saved position; delete it to reset the panel |
+
+Problems are logged to `%TEMP%\vrmc.log`.
+
+## How it works
+
+- `vrmc.py`: the overlay. It reads Windows media sessions, controls the music app's own volume
+  (like the Windows volume mixer), and draws the panel into an OpenGL texture that it hands to SteamVR,
+  the way OpenVR-SpaceCalibrator and OVR Advanced Settings do. That's why updates don't blink. The grab
+  button comes from SteamVR Input (`input/`), so it doesn't take buttons away from your game.
+- `music_share.py`: captures only the music app's audio (Windows process loopback), mixes it with
+  your mic, and plays the result into the Steam Streaming Microphone.
 
 ## Known issues
 
-- Touching the title / album-art area also triggers the transport buttons.
-- SHARE shows ON even when audio capture has failed; nothing on the panel shows the error.
-- Pear Desktop is not matched for sharing.
+- SHARE shows ON even if capturing the music failed; check `%TEMP%\vrmc.log`.
+- Music sharing doesn't recognise Pear Desktop yet.
 
 ## License
 
