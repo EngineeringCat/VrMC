@@ -9,6 +9,7 @@ normally: it is copied with Windows process loopback, not rerouted.
 """
 import ctypes
 import ctypes.wintypes as wt
+import re
 import threading
 import time
 
@@ -30,9 +31,46 @@ MAX_LAG_S = 0.15            # drop old audio beyond this so the mic doesn't drif
 
 sharing = False             # flipped by the SHARE button
 music_app = ""              # media session app id, e.g. "firefox.exe"; set by the overlay
-status = "starting"
 mic_choice = ""             # "" = Windows default mic; set from settings
 level_you = level_others = 0.0   # peak levels for the panel's meters
+mic_open = False            # your mic + the virtual mic are running
+capture_state = "no app"    # music capture: "ok", "no app" (music app not found) or "error"
+
+BROWSERS = ("firefox", "chrome", "msedge", "brave", "librewolf", "opera", "vivaldi")
+_ID_NOISE = {"com", "github", "microsoft", "windows", "desktop", "app", "exe"}
+
+
+def _squash(s):
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def is_music_process(proc_name):
+    """Does this process belong to the media session's app (music_app)? Used for both the volume slider
+    and SHARE. Session ids look like 'firefox.exe', 'Spotify.exe', 'Chrome', 'MSEdge', or for Pear Desktop
+    (YouTube Music.exe) 'com.github.th-ch.youtube-music'."""
+    app, name = music_app.lower(), proc_name.lower().removesuffix(".exe")
+    if not app or not name:
+        return False
+    if app.endswith(".exe"):
+        return name == app.removesuffix(".exe")
+    if _squash(name) in _squash(app):  # "chrome" in "chrome", "youtubemusic" in "comgithubthchyoutubemusic"
+        return True
+    words = [w for w in re.split(r"[^a-z0-9]+", app) if len(w) >= 4 and w not in _ID_NOISE]
+    if any(w in _squash(name) for w in words):
+        return True
+    # some browsers report an opaque id (a hex hash): then it's the browser
+    return re.fullmatch(r"[0-9a-f]{16}", app) is not None and name in BROWSERS
+
+
+def problem():
+    """Why sharing can't work right now, short enough for the panel; None when it works."""
+    if not mic_open:
+        return "no mic"
+    if capture_state == "error":
+        return "can't capture music"
+    if capture_state == "no app":
+        return "music app not found"
+    return None
 
 
 # --- Windows process loopback (capture one app's audio) ---
@@ -145,12 +183,9 @@ _streams = []  # keep references so the streams aren't garbage-collected
 
 
 def _music_pid():
-    app = music_app.lower()
-    if not app:
-        return None
     for p in psutil.process_iter(["name", "ppid"]):
         name = (p.info["name"] or "").lower()
-        if name and (name == app or name.removesuffix(".exe") in app):
+        if is_music_process(name):
             try:
                 parent = psutil.Process(p.info["ppid"]).name().lower()
             except psutil.Error:
@@ -161,7 +196,7 @@ def _music_pid():
 
 
 def _music_thread():
-    global status, level_you
+    global capture_state, level_you
     comtypes.CoInitializeEx(0)  # MTA
     pid = client = None
     checked = 0
@@ -174,9 +209,10 @@ def _music_thread():
                 if client:
                     client.Stop()
                 client, pid = None, want
+                capture_state = "no app"
                 if pid:
                     client, capture, event = _open_loopback(pid)
-                    status = "ok"
+                    capture_state = "ok"
             if not client:
                 time.sleep(1)
                 continue
@@ -193,7 +229,9 @@ def _music_thread():
                 # depend on "you hear" (capped at +40 dB; at 0% / muted there is nothing to recover)
                 _music.write(frames / max(you_amp, 0.01))
         except Exception as e:
-            status = f"music capture error: {e!r}"
+            if capture_state != "error":
+                _log(f"music share: can't capture music: {e!r}")
+            capture_state = "error"
             client = pid = want = None
             time.sleep(2)
 
@@ -256,7 +294,7 @@ def _watchdog(log):
     """Keeps the mix running: reopens when a stream dies or freezes (Windows reconfiguring a device,
     e.g. VRChat opening the virtual mic) or when the mic to use changes (settings, new default).
     Retries back off up to 30 s and only state changes are logged, so a missing mic can't flood the log."""
-    global status
+    global mic_open
     mic, wait, last_msg = None, 1, None
     while True:
         time.sleep(wait)
@@ -286,13 +324,18 @@ def _watchdog(log):
                 msg = f"music share: can't open audio ({want}): {e!r}"
         if not mic:
             wait = min(wait * 2, 30)
-        status = msg
+        mic_open = bool(mic)
         if msg != last_msg:
             log(msg)
             last_msg = msg
 
 
+_log = print
+
+
 def start(log=print):
     """Start the mic + music mix in the background and keep it running."""
+    global _log
+    _log = log
     threading.Thread(target=_watchdog, args=(log,), daemon=True).start()
     threading.Thread(target=_music_thread, daemon=True).start()

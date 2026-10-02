@@ -111,19 +111,12 @@ RED, BTN, BG = (255, 0, 60), (40, 40, 48), (18, 18, 22)
 # Perceptual curve: loudness ~ amplitude^0.6 (Stevens' law), so amplitude = slider^(1/0.6) makes every
 # part of the slider change loudness by the same amount. 50% = half as loud, 0% = silent.
 CURVE = 1 / 0.6
-MUSIC_PROCS = ("firefox", "pear", "youtube", "chrome", "msedge", "brave", "librewolf")
-music_app = ""  # media session's app id, e.g. "firefox.exe"; set by the media poller
 
 
 def music_volumes():
-    app = music_app.lower()
-    out = []
-    for s in AudioUtilities.GetAllSessions():
-        name = s.Process.name().lower() if s.Process else ""
-        if name and (name == app or name.removesuffix(".exe") in app
-                     or (not app.endswith(".exe") and any(p in name for p in MUSIC_PROCS))):
-            out.append(s.SimpleAudioVolume)
-    return out
+    """Volume controls of the music app's audio sessions (same app SHARE copies)."""
+    return [s.SimpleAudioVolume for s in AudioUtilities.GetAllSessions()
+            if s.Process and music_share.is_music_process(s.Process.name())]
 
 
 def get_volume():
@@ -152,7 +145,10 @@ def toggle_mute():
 
 
 # --- drawing ---
-def render(title, artist, playing, art, vol, muted, sharing, share_pct, pressed=None):
+AMBER = (255, 160, 0)
+
+
+def render(title, artist, playing, art, vol, muted, sharing, share_pct, pressed=None, share_problem=None):
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
     x = 20
@@ -169,9 +165,9 @@ def render(title, artist, playing, art, vol, muted, sharing, share_pct, pressed=
         d.rounded_rectangle((cx0, BTN_Y0, cx1, BTN_Y1), 18, fill=RED if pressed == i else BTN)
         d.text(((cx0 + cx1 - d.textlength(ic, font=F_ICON)) / 2, BTN_Y0 + 5), ic, font=F_ICON, fill="white")
 
-    def slider_row(y0, y1, value, active, caption):
+    def slider_row(y0, y1, value, active, caption, caption_fill=(150, 150, 160)):
         cy = (y0 + y1) // 2
-        d.text((SLIDER_X0, y0 - 2), caption, font=F_SMALL, fill=(150, 150, 160))
+        d.text((SLIDER_X0, y0 - 2), caption, font=F_SMALL, fill=caption_fill)
         d.rounded_rectangle((SLIDER_X0, cy - 8, SLIDER_X1, cy + 8), 8, fill=(55, 55, 65))
         kx = SLIDER_X0 + (SLIDER_X1 - SLIDER_X0) * value / 100
         d.rounded_rectangle((SLIDER_X0, cy - 8, kx, cy + 8), 8, fill=RED if active else (110, 110, 120))
@@ -185,8 +181,12 @@ def render(title, artist, playing, art, vol, muted, sharing, share_pct, pressed=
     ic = "🔇" if muted else "🔊"
     d.text(((10 + MUTE_X1 - d.textlength(ic, font=F_VOL)) / 2, cy - 26), ic, font=F_VOL, fill="white")
     # what people in VRChat hear: [SHARE] [slider] [pct]
-    cy = slider_row(SHARE_Y0, SHARE_Y1, share_pct, sharing, "others hear")
-    d.rounded_rectangle((10, SHARE_Y0, MUTE_X1, SHARE_Y1), 18, fill=RED if pressed == "share" or sharing else BTN)
+    broken = sharing and share_problem
+    cy = slider_row(SHARE_Y0, SHARE_Y1, share_pct, sharing and not broken,
+                    f"others hear nothing: {share_problem}" if broken else "others hear",
+                    AMBER if broken else (150, 150, 160))
+    d.rounded_rectangle((10, SHARE_Y0, MUTE_X1, SHARE_Y1), 18,
+                        fill=AMBER if broken else RED if pressed == "share" or sharing else BTN)
     for line, ty in (("SHARE", cy - 32), ("ON" if sharing else "OFF", cy + 2)):
         d.text(((10 + MUTE_X1 - d.textlength(line, font=F_ARTIST)) / 2, ty), line, font=F_ARTIST, fill="white")
     return img
@@ -243,13 +243,12 @@ def pick_session(mgr):
 
 
 async def poll_media():
-    global music_app
     mgr = await SessionManager.request_async()
     art_key, art_until = None, 0  # keep re-reading the cover until art_until: apps send the title first
     while True:
         try:
             s = Now.session = pick_session(mgr)
-            music_app = music_share.music_app = s.source_app_user_model_id if s else ""
+            music_share.music_app = s.source_app_user_model_id if s else ""
             title = artist = ""
             playing = False
             if s:
@@ -617,11 +616,12 @@ def main():
             # draw: panel re-rendered only when something on it changes, meters up to 15 fps
             if time.time() > pressed_until:
                 pressed = None
+            share_problem = music_share.problem()
             new_frame = (Now.title, Now.artist, Now.playing, id(Now.art), Now.vol, Now.muted,
-                         music_share.sharing, share_pct, pressed)
+                         music_share.sharing, share_pct, pressed, share_problem)
             if new_frame != frame:
                 base = rounded(render(Now.title, Now.artist, Now.playing, Now.art, Now.vol, Now.muted,
-                                      music_share.sharing, share_pct, pressed))
+                                      music_share.sharing, share_pct, pressed, share_problem))
                 frame, shown_meters = new_frame, None
             m_you = max(meter_level(music_share.level_you), m_you - 0.03)
             m_others = max(meter_level(music_share.level_others), m_others - 0.03)

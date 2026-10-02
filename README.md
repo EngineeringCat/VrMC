@@ -51,7 +51,8 @@ Both sliders use a perceptual curve: 50% sounds about half as loud.
 2. Tap **SHARE** on the panel.
 
 VrMC mixes your real mic (your Windows default mic) and a copy of the music app's audio into that
-virtual mic. You keep hearing the music normally.
+virtual mic. You keep hearing the music normally. If sharing can't work (no mic, music app not found,
+capture failed), SHARE turns amber and the panel says why.
 
 - While VRChat uses that mic, your voice goes through VrMC: if VrMC isn't running, VRChat hears
   nothing. Switch VRChat back to your normal mic in that case.
@@ -82,11 +83,6 @@ Problems are logged to `%TEMP%\vrmc.log`.
   button comes from SteamVR Input (`input/`), so it doesn't take buttons away from your game.
 - `music_share.py`: captures only the music app's audio (Windows process loopback), mixes it with
   your mic, and plays the result into the Steam Streaming Microphone.
-
-## Known issues
-
-- SHARE shows ON even if capturing the music failed; check `%TEMP%\vrmc.log`.
-- Music sharing doesn't recognise Pear Desktop yet.
 
 ## License
 
