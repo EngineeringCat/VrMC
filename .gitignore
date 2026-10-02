@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+# regenerated on every launch, contains local paths
+wrist_media.vrmanifest
+# scratch renders
+preview_*.png
+# your personal settings
+settings.json
+settings.json.tmp

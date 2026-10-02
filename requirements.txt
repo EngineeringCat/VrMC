@@ -1,0 +1,12 @@
+openvr>=2.12
+pillow>=12.0
+pycaw>=20240316
+comtypes>=1.4
+sounddevice>=0.5
+numpy>=2.0
+psutil>=7.0
+winrt-runtime>=3.2
+winrt-Windows.Media.Control>=3.2
+winrt-Windows.Storage.Streams>=3.2
+winrt-Windows.Foundation>=3.2
+winrt-Windows.Foundation.Collections>=3.2
